@@ -1,0 +1,36 @@
+answers-thread.txt
+Christopher Juncker
+Lab 7
+
+
+1. Why are there missing keys with 2 threads but not with 1 thread?
+
+  The keys are stored in a linked list. When two threads try to insert
+  an entry with the same key, they both get the same value for the "next"
+  pointer and they both update he head of the list, setting their own
+  entry. Since neither thread knows what the other is doing, the faster
+  thread will have its entry overwritten by the slower thread.
+
+
+2. Identify a sequence of events with 2 threads that can lead to a key 
+    being missing.
+
+  a. put is called from both threads via put() with identical keys:
+
+      put(key, value);
+
+  b. each thread finds the head of the same list:
+
+      if (e->key == key)
+
+  c. each thread calls insert on the same head entry:
+
+      insert(key, value, &table[i], table[i]);
+
+  d. both threads update the same head pointer in insert:
+
+      *p = e
+
+  e. the slow thread overwrites the fast thread's head pointer
+
+

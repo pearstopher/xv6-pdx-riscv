@@ -127,6 +127,13 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+
+  //lab4.1 test0
+  //you can initialize proc fields in allocproc.c
+  p->alarm_interval = 0;
+  p->handler_ptr = 0;
+  p->ticks = 0;
+
   return p;
 }
 

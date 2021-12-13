@@ -67,6 +67,46 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+
+
+    //lab 4.1 test0
+    //manipulate a process's alarm ticks only if there's a timer interrupt
+    if (which_dev == 2)
+    {
+      int alarm = p->alarm_interval;
+
+      if (alarm)
+      {
+        p->ticks += 1;
+
+        if (alarm == p->ticks)
+        {
+          //when a process's alarm interval expires,
+          //the user process executes the handler function
+          //sigreturn(); //returns zero to user/alarmtest
+
+          //try and save the whole trapframe
+          // (see comments in sysproc.c:sys_sigreturn
+          //
+          //heh just to placate GCC
+          //memcpy(void *dst, const void *src, uint n)
+          p->saved_trapframe = (struct trapframe *) kalloc();
+          memmove(p->saved_trapframe, p->trapframe, sizeof(*(p->trapframe)));
+          //oops - big issue, sizeof pointer instead of size of trapframe
+          //still need to add a saved_trapframe to the proc (fixed)
+
+          //this sets the sepc register with the instruction to return to
+          p->trapframe->epc = p->handler_ptr;
+
+
+          //lab 4.2 test1
+          //save registers ("it will be many")
+        }
+      }
+    }
+
+
+
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

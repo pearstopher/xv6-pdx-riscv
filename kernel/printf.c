@@ -25,6 +25,54 @@ static struct {
 
 static char digits[] = "0123456789abcdef";
 
+//lab 4
+//void printf(char *fmt, ...)
+//
+//backtrace is defined in defs.h
+void
+backtrace()
+{
+
+  //r_fp() is defined in riscv.h
+  uint64 s0 = r_fp();
+  
+  printf("backtrace:\n");
+
+  //stack is one page
+  //stack starts at top of page
+  //return address is at fp - 8
+  //saved frame ptr is at fp - 16
+  //s0 = frame pointer/fp
+  //use PGROUNDUP(fp) to compute bottom address
+  //use PGROUNDDOWN(fp) to compute top address
+  //it appears from example that the most recent
+  //  call should be displayed last
+
+  //for (; s0 > PGROUNDDOWN(s0); s0 = * (uint64 *) (s0 - 16))
+  //both strategies (rouding up or down) give same result
+  for (; s0 < PGROUNDUP(s0); s0 = * (uint64 *) (s0 - 16) )
+  {
+    //print the return address
+    //getting " error: invalid type argument of unary '*' (have 'uint64') "
+    //maybe I can cast it to uint64 and dereference
+    //works but seems weirdly unnecessary
+    printf("%p\n", * (uint64 *) (s0 - 8) );
+    //regarding printf itself,
+    //  %i is signed
+    //  %u doesn't exist
+    //  %p aaaaaah that's the stuff
+
+    //find the next saved frame
+    //s0 = *(s0 - 16); //first try
+    //s0 = *((*s0) - 16); //second try
+    //s0 = s0 - 16; //third try
+    //do the same cast and dereference thing here (thanks error msg)
+    //my first try was basically right see?
+    //s0 = * (uint64 *) (s0 - 16); //fourth try is the charm
+    //putting it in the loop tho
+  }
+}
+
 static void
 printint(int xx, int base, int sign)
 {
@@ -121,9 +169,17 @@ panic(char *s)
   printf("panic: ");
   printf(s);
   printf("\n");
+
+  //lab 4
+  //damn that's quite the for loop down there
+  backtrace();
+
+
+
   panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;
+
 }
 
 void

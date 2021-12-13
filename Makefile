@@ -158,7 +158,11 @@ mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 # http://www.gnu.org/software/make/manual/html_node/Chained-Rules.html
 .PRECIOUS: %.o
 
+
+#lab 4.1 test0
+#  added alarmtest
 UPROGS=\
+  $U/_alarmtest\
 	$U/_cat\
 	$U/_echo\
 	$U/_forktest\

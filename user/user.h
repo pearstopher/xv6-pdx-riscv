@@ -1,6 +1,10 @@
 struct stat;
 struct rtcdate;
 
+//lab 4.1 test0
+int sigalarm(int ticks, void (*handler)());
+int sigreturn(void);
+
 // system calls
 int fork(void);
 int exit(int) __attribute__((noreturn));

@@ -8,6 +8,14 @@
 #define NBUCKET 5
 #define NKEYS 100000
 
+
+//lab 7
+//declare a lock
+//pthread_mutex_t lock;
+//"how about a lock per hash bucket"
+pthread_mutex_t locks[NBUCKET];
+
+
 struct entry {
   int key;
   int value;
@@ -40,6 +48,14 @@ void put(int key, int value)
 {
   int i = key % NBUCKET;
 
+  //lab 7
+  //start the lock before we get the next pointer
+  //thread2 shouldn't get it until thread1 is done
+  //pthread_mutex_lock(&lock);
+  //i assigns each key to a bucket 1-5
+  pthread_mutex_lock(&locks[i]);
+
+
   // is the key already present?
   struct entry *e = 0;
   for (e = table[i]; e != 0; e = e->next) {
@@ -53,6 +69,12 @@ void put(int key, int value)
     // the new is new.
     insert(key, value, &table[i], table[i]);
   }
+
+  //lab 7
+  //release the lock when the insertion is done
+  //pthread_mutex_unlock(&lock);
+  pthread_mutex_unlock(&locks[i]);
+
 }
 
 static struct entry*
@@ -99,6 +121,15 @@ get_thread(void *xa)
 int
 main(int argc, char *argv[])
 {
+
+  //lab 7
+  //initialize the lock
+  //just like seeding random number once in main
+  //pthread_mutex_init(&lock, NULL);
+  for (int i = 0; i < NBUCKET; ++i)
+    pthread_mutex_init(&locks[i], NULL);
+
+
   pthread_t *tha;
   void *value;
   double t1, t0;

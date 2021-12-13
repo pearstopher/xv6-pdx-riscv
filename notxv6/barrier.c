@@ -30,6 +30,62 @@ barrier()
   // Block until all threads have called barrier() and
   // then increment bstate.round.
   //
+
+  
+  //"each thread blocks in barrier until all nthreads have called barrier()"
+  //
+  //You will need:
+  //
+  //0. the lock primitives you have seen in the ph assignment
+  //
+  //1. pthread_cond_wait(&cond, &mutex)
+  //  "go to sleep on cond, releasing lock mutex, acquiring upon wakeup"
+  //  "releases the mutex when called and re-acquires the mutex before returning"
+  //
+  //2. pthread_cond_broadcast(&cond)
+  //  "wake up every thread sleeping on cond"
+  //
+  //struct is called bstate not barrier
+
+  //turn on the lock (from ph)
+  //pthread_mutex_lock(bstate.barrier_mutex);
+  pthread_mutex_lock(&(bstate.barrier_mutex));
+
+  //increment nthread manually
+  bstate.nthread += 1;
+
+  //case 1: check if all the threads have arrived
+  if (bstate.nthread == nthread) //nthread comes from argv[1]
+  {
+    //reset the number of threads
+    bstate.nthread = 0;
+    //increment the round counter
+    bstate.round += 1;
+
+    //send the wakeup call
+    pthread_cond_broadcast(&(bstate.barrier_cond));
+  }
+  
+  //case 2: put the thread to sleep and wait
+  else
+  {
+    pthread_cond_wait(&(bstate.barrier_cond), &(bstate.barrier_mutex));
+  }
+
+
+  //I suppose i should unlock it too
+  //unlock from ph
+  pthread_mutex_unlock(&(bstate.barrier_mutex));
+
+  
+
+
+
+  
+
+
+
+  // END CODE HERE
   
 }
 

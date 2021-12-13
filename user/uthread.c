@@ -15,6 +15,14 @@ struct thread {
   char       stack[STACK_SIZE]; /* the thread's stack */
   int        state;             /* FREE, RUNNING, RUNNABLE */
 
+  //lab 7
+  //
+  // "modifying struct thread to hold registers is a good plan"
+  //
+  //if they are contiguous I can access with pointer arithmetic
+  //then I only need to pass two arguments, one for each thread
+  uint64 registers[14];
+
 };
 struct thread all_thread[MAX_THREAD];
 struct thread *current_thread;
@@ -63,6 +71,22 @@ thread_schedule(void)
      * Invoke thread_switch to switch from t to next_thread:
      * thread_switch(??, ??);
      */
+
+    /*
+     * this is the ASM function in uthread_switch.S
+     * arguments:
+     *    t.registers (current set)
+     *    current_thread.registers (next set)
+     *
+     *
+     */
+    //did you mean to use -> instead of .? Sure heckin did!
+    //also, error need to cast  to uint64
+    thread_switch((uint64)t->registers, (uint64)current_thread->registers);
+
+
+
+     /* END CODE HERE */
   } else
     next_thread = 0;
 }
@@ -77,6 +101,27 @@ thread_create(void (*func)())
   }
   t->state = RUNNABLE;
   // YOUR CODE HERE
+
+
+  //thread_create has a function pointer argument
+  //set the return address to go to the function!
+  t->registers[13] = (uint64)func;
+  //func not func(), and need to cast to uint64
+  //[13] = return address in last array element
+
+
+  //thread struct holds a stack of STACK_SIZE
+  //now i might not be the smartest cookie...
+  // but at least i know one of the registers
+  // is called SP which means "stack pointer"
+  t->registers[0] = (uint64)&(t->stack[STACK_SIZE - 1]);
+  //stack starts at the TOP address and goes down
+  //& to get memory location instead of char data
+  //[0] = stack pointer held in first array index
+
+
+
+  // END CODE HERE
 }
 
 void 

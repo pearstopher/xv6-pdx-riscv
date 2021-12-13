@@ -10,6 +10,7 @@
 #include "defs.h"
 
 void freerange(void *pa_start, void *pa_end);
+int amt_mem_free(void);
 
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
@@ -79,4 +80,25 @@ kalloc(void)
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
+}
+
+//lab 2
+//loop through free list
+//sum total # of available pages
+int
+amt_mem_free(void)
+{
+  int total = 0;
+  struct run *r;
+
+  acquire(&kmem.lock);
+  r = kmem.freelist;
+  while(r)
+  {
+    total += PGSIZE; //4096 I presume
+    r = r->next;
+  }
+  release(&kmem.lock);
+
+  return total;
 }

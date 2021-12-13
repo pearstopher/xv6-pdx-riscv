@@ -150,6 +150,8 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+
+  p->trace = 0; //lab 2
 }
 
 // Create a user page table for a given process,
@@ -276,6 +278,9 @@ fork(void)
   np->sz = p->sz;
 
   np->parent = p;
+
+  //lab 2
+  np->trace = p->trace;
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
@@ -693,3 +698,25 @@ procdump(void)
     printf("\n");
   }
 }
+
+//lab 2 way down here
+int
+num_procs(void)
+{
+  int count = 0;
+  struct proc *p;
+
+  //possible states unused, sleeping, runnable, running, zombie
+
+  //loop through all procs
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state != UNUSED) {
+      ++count;
+    }
+    release(&p->lock);
+  }
+  return count;
+}
+
+

@@ -6,6 +6,8 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h" //lab 2
+//#include "stdlib.h" //lab 2 - malloc the struct
 
 uint64
 sys_exit(void)
@@ -94,4 +96,61 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+//lab 2
+uint64
+sys_trace(void)
+{
+  int num;
+
+  //get the first arg like this
+  if (argint(0, &num) < 0)
+    return -1;
+
+  //add the syscall num to the newly creeated proc int
+  struct proc *p = myproc();
+  p->trace = num;
+
+  //I dont think I need to zero out the trace at any point
+  //the whole proc will dissapear when the procedure is done
+
+  //return -1 on failure I think
+  //and 0 or + on success?
+  return 0; //for now
+
+  //does this need to call trace?
+  //return trace(num);
+
+}
+
+//lab 2
+uint64
+sys_sysinfo(void)
+{
+  //this is a struct pointer
+  uint64 structptr;
+  if (argaddr(0, &structptr) < 0)
+    return -1;
+
+  struct proc *p = myproc();
+
+
+  //struct sysinfo * s = (struct sysinfo *) malloc(sizeof(struct sysinfo));
+  struct sysinfo s; //copying out, I don't need to malloc it
+
+  //copy in he amount of free memory
+  //kernel/kalloc.c
+  s.freemem = amt_mem_free();
+
+  //copy in the number of processes
+  //kernel/proc.c
+  s.nproc = num_procs();
+
+  //use copyout() to copy the struct back to user space
+  if (copyout(p->pagetable, structptr, (char *)&s, sizeof(s)) < 0)
+    return -1;
+
+  return 0;
+
 }

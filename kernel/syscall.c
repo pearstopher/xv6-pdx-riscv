@@ -104,6 +104,8 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_wait(void);
 extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
+extern uint64 sys_trace(void); //lab 2
+extern uint64 sys_sysinfo(void); //lab 2
 
 static uint64 (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -127,6 +129,8 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_trace]   sys_trace, //lab 2
+[SYS_sysinfo] sys_sysinfo, //lab 2
 };
 
 void
@@ -134,10 +138,56 @@ syscall(void)
 {
   int num;
   struct proc *p = myproc();
+  
+  num = p->trapframe->a7; //not my line, i assume this is the syscall #
 
-  num = p->trapframe->a7;
+
+  //lab 2
+
+  //there must be an array somewhere I can borrow
+  //instead of building a whole new one
+  //need to remember to update with new system calls
+
+  //array of syscall names
+  char * syscall_arr[] = {
+    "zero", //index 0
+    "fork",
+    "exit",
+    "wait",
+    "pipe",
+    "read",
+    "kill",
+    "exec",
+    "fstat",
+    "chdir",
+    "dup",
+    "getpid",
+    "sbrk",
+    "sleep",
+    "uptime",
+    "open",
+    "write",
+    "mknod",
+    "unlink",
+    "link",
+    "mkdir",
+    "close",
+    "trace", //lab 2
+  };
+
+
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
     p->trapframe->a0 = syscalls[num]();
+
+    
+    //check if system call bit is turned on in the trace mask
+    if (p->trace & (1 << num)) //<-- glad i paid attention in 201
+    {
+      //process id, name of system call return value
+      printf("%d: syscall %s -> %d\n", p->pid, syscall_arr[num], p->trapframe->a0);
+    }
+
+
   } else {
     printf("%d %s: unknown sys call %d\n",
             p->pid, p->name, num);

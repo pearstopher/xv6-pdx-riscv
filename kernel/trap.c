@@ -65,7 +65,42 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
+  }
+
+  //lab 6
+  //
+  //2. "Modify usertrap() to recognize page faults. When a page-fault occurs
+  //     on a COW page, allocate a new page with kalloc(), copy the old page
+  //     to the new page, and install the new page in the PTE with PTE_W set"
+  //
+  //13 = load page fault
+  //15 = write page fault (copy on WRITE)
+  //else if (r_scause() == 13 || r_scause() == 15)
+  else if (r_scause() == 15)
+  {
+    //get the page fault address
+    uint64 va = PGROUNDDOWN(r_stval());
+
+    //check if the page fault occurs on a COW page
+    if (!is_cow(p->pagetable, va))
+      panic("Page Fault");
+
+    //attempt to create a new page
+    if (uvmcow(p->pagetable, va) < 0)
+        //kill process if unable
+        p->killed = 1;
+
+  }
+  //usertests still gets a 13
+  /*else if (r_scause() == 13)
+  {
+    panic("Page load fault.");
+  }*/
+  //else if (r_scause() == 2)
+  //  p->trapframe->epc += 0x80000000;
+
+
+  else if((which_dev = devintr()) != 0){
     // ok
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);

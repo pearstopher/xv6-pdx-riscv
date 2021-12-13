@@ -6,10 +6,22 @@
 #include "defs.h"
 #include "fs.h"
 
+//lab 6
+//accessing myproc() from in here again
+#include "spinlock.h"
+#include "proc.h"
+
+
+
 /*
  * the kernel's page table.
  */
 pagetable_t kernel_pagetable;
+
+//lab 6
+//page to hold reference count array
+int cow_refs[PHYSTOP/PGSIZE] = {0};
+
 
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
@@ -45,6 +57,7 @@ kvminit()
   // map the trampoline for trap entry/exit to
   // the highest virtual address in the kernel.
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+
 }
 
 // Switch h/w page table register to the kernel's page table,
@@ -188,7 +201,11 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not a leaf");
     if(do_free){
       uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+
+      //lab 6
+      //decrement reference count instead of freeing
+      //kfree((void*)pa);
+      decrement_rc((uint64)pa);
     }
     *pte = 0;
   }
@@ -223,6 +240,7 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
   memmove(mem, src, sz);
 }
 
+
 // Allocate PTEs and physical memory to grow process from oldsz to
 // newsz, which need not be page aligned.  Returns new size or 0 on error.
 uint64
@@ -243,7 +261,11 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     }
     memset(mem, 0, PGSIZE);
     if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
-      kfree(mem);
+      //lab 6
+      //remove reference count instead of free
+      //kfree(mem);
+      decrement_rc((uint64)mem);
+
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
@@ -286,7 +308,11 @@ freewalk(pagetable_t pagetable)
       panic("freewalk: leaf");
     }
   }
-  kfree((void*)pagetable);
+
+  //lab 6
+  //decrement reference count instead of free
+  //kfree((void*)pagetable);
+  decrement_rc((uint64)pagetable);
 }
 
 // Free user memory pages,
@@ -308,10 +334,16 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
+  //lab 6
+  //
+  //"Modify uvmcopy() to map the parent's physical pages into the
+  //  child, instead of allocating new pages. Clear PTE_W in the
+  //  PTEs of both child and parent.
+
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  uint newflags;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -320,20 +352,157 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
-    }
+
+
+    //"clear PTE_W in the PTEs of the child and parent"
+    newflags = flags & ~PTE_W;
+
+    //"It may be useful to have a way to record, for each PTE, 
+    //  whether it is a COW mapping. You can use the RSW
+    //  (reserved for software) bits in the RISC-V PTE for this"
+    newflags = newflags | PTE_COW; //defined in riscv.h
+
+    //map parent's physical pages into child
+    if (mappages(new, i, PGSIZE, pa, newflags) != 0)
+      panic("Lab 6 uvmcopy error mapping child");
+
+    //fix bits in parent's pagetable by unmap/remap
+    uvmunmap(old, i, 1, 0);
+    if (mappages(old, i, PGSIZE, pa, newflags) != 0)
+      panic("Lab 6 uvmcopy could not remap parent page.");
+
+
+    //"increment a page's reference count when fork causes a
+    //  child to share the page"
+    increment_rc(pa);
   }
   return 0;
-
- err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
-  return -1;
 }
+
+
+//lab 6
+//
+//alternate version of uvm_copy based on original version
+//called by trap.c to copy a page AFTER page fault
+//
+//returns 0 on success, <0 on failure
+int
+uvmcow(pagetable_t pagetable, uint64 va)
+{
+  pte_t *pte;
+  uint64 pa;
+  uint flags;
+  uint newflags;
+  char *mem;
+
+  //getting a panic in walk() for bigger than MAXVA for usertests
+  if (va > MAXVA)
+    return -1;
+
+  //get the physical address
+  if ((pte = walk(pagetable, va, 0)) == 0)
+    panic("uvmcow: pte should exist");
+
+  if ((*pte & PTE_V) == 0)
+    panic("uvmcow: page not present");
+
+  pa = PTE2PA(*pte);
+  flags = PTE_FLAGS(*pte);
+
+  //reset the flags
+  newflags = flags | PTE_W; //turn write on
+  newflags =  newflags & ~PTE_COW; //remove cow
+  //newflags = newflags | PTE_V; //force it to be valid?
+  //newflags = newflags | PTE_U; //send it into user space
+
+  //make the new memory and copy it
+  if ((mem = kalloc()) == 0)
+  {
+    //printf("\nuvmcow kalloc() out of memory\n");
+    return -1;
+  }
+  memmove(mem, (char*)pa, PGSIZE);
+
+  //unmap and remap the pagetable
+  uvmunmap(pagetable, va, 1, 0);
+  if (mappages(pagetable, va, PGSIZE, (uint64)mem, newflags) != 0) {
+    panic("uvmcow: mappages fail");
+  }
+
+  //decrement the reference count
+  decrement_rc(pa);
+
+
+  return 0;
+
+}
+
+
+//lab 6
+//accepts pagetable & virtual address
+//return 1 if page is marked copy on write
+//return 0 otherwise
+int
+is_cow(pagetable_t pagetable, uint64 va)
+{
+  //get the address
+  pte_t * pte = walk(pagetable, va, 0);
+
+  //no entry found
+  if (pte == 0)
+    return 0;
+
+  //check for cow bit
+  if (*pte & PTE_COW)
+    return 1;
+
+  return 0;
+}
+
+
+//lab 6
+//adds 1 to the physical address's reference count
+void
+increment_rc(uint64 pa)
+{
+  //try to hack into the right bits for the PA
+  cow_refs[pa/PGSIZE]++;
+
+  //printf("\nincrement reference to %d\n", get_rc(pa));
+}
+
+
+//lab 6
+//subtracts 1 from the physical address's reference count
+void
+decrement_rc(uint64 pa)
+{
+  //prefix vs postfix
+  int count = --cow_refs[pa/PGSIZE];
+
+  //printf("\ndecrement reference to %d\n", get_rc(pa));
+
+  if (count == 0)
+  {
+    //printf("\nref count reached zero\n");
+    kfree((void *)pa);
+  }
+
+  if (count < 0)
+    panic("Negative reference count");
+}
+
+
+//lab 6
+//get reference count for kfree
+//because cow_refs is file scope here
+int
+get_rc(uint64 pa)
+{
+  return cow_refs[pa/PGSIZE];
+}
+
+
 
 // mark a PTE invalid for user access.
 // used by exec for the user stack guard page.
@@ -354,23 +523,100 @@ uvmclear(pagetable_t pagetable, uint64 va)
 int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
+
+  //lab 6
+
+
   uint64 n, va0, pa0;
+  pte_t * pte;
+  //uint flags, newflags;
+  //uint64 mem;
 
-  while(len > 0){
+  while(len > 0)
+  {
     va0 = PGROUNDDOWN(dstva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (dstva - va0);
-    if(n > len)
-      n = len;
-    memmove((void *)(pa0 + (dstva - va0)), src, n);
 
+    //still getting walk() maxva error
+    //usertests is doing something crazy?
+    if (va0 > MAXVA)
+      return -1;
+
+    if ((pte = walk(pagetable, va0, 0)) == 0)
+      //panic("copyout: pte should exist");
+      return -1;
+
+    if ((*pte & PTE_V) == 0)
+      //panic("copyout: page not present");
+      return -1;
+
+    //might start / finish mid page
+    n = PGSIZE - (dstva - va0);
+    if (n > len)
+      n = len;
+
+    //go through the VAs one page at a time
+    //check each page to see if it is cow or not
+    if (is_cow(pagetable, va0))
+    {
+      if (uvmcow(pagetable, va0) < 0)
+        return -1;
+
+      //realized I can use my old function, still not sure why the new one doesn't work :(
+
+    }
+
+    //if (!is_cow(pagetable, va0))
+    { 
+      //the non COW part seems to work fine
+
+      pa0 = PTE2PA(*pte); //added since using pte not pa
+      memmove((void *)(pa0 + (dstva - va0)), src, n);
+    }
+/*
+    else
+    {
+      //printf("\ncopyout cow\n");
+      //do the COW thing
+
+      pa0 = PTE2PA(*pte);
+      flags = PTE_FLAGS(*pte);
+
+      //reset the flags
+      newflags = flags | PTE_W; //set write
+      newflags = newflags & ~PTE_COW; //remove cow?
+
+      //make the new memory and copy it
+      if ((mem = (uint64) kalloc()) == 0)
+        return -1;
+
+
+      //move the memory from src to mem
+      //memmove(mem + (dstva - va0), (void *)(pa0 + (dstva - va0)), n);
+      memmove((void *)(mem + (dstva - va0)), src, n);
+
+      //printf("after memmove\npa0=%p\nva0=%p\n", pa0, va0);
+
+      //unmap and remap the cow reference
+      uvmunmap(pagetable, va0, 1, 0);
+      if (mappages(pagetable, va0, PGSIZE, (uint64)mem, newflags) != 0) {
+        decrement_rc((uint64)mem);
+        //kfree(mem)
+        return -1;
+      }
+
+      //decrement the reference count
+      decrement_rc(pa0);
+
+    }
+*/
     len -= n;
     src += n;
     dstva = va0 + PGSIZE;
+
+
   }
   return 0;
+
 }
 
 // Copy from user to kernel.

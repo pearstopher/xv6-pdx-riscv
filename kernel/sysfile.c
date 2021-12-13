@@ -444,13 +444,17 @@ sys_exec(void)
   int ret = exec(path, argv);
 
   for(i = 0; i < NELEM(argv) && argv[i] != 0; i++)
-    kfree(argv[i]);
+    //lab 6
+    //kfree(argv[i]);
+    decrement_rc((uint64)argv[i]);
 
   return ret;
 
  bad:
   for(i = 0; i < NELEM(argv) && argv[i] != 0; i++)
-    kfree(argv[i]);
+    //lab 6
+    //kfree(argv[i]);
+    decrement_rc((uint64)argv[i]);
   return -1;
 }
 

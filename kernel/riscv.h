@@ -332,6 +332,14 @@ sfence_vma()
 #define PTE_X (1L << 3)
 #define PTE_U (1L << 4) // 1 -> user can access
 
+//lab 6
+//in sv39 the RSW bits are 8 & 9
+//https://riscv.org/wp-content/uploads/2017/05/riscv-privileged-v1.10.pdf p63
+//I will just use the first bit as a flag
+#define PTE_COW (1L << 8)
+
+
+
 // shift a physical address to the right place for a PTE.
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)
 

@@ -50,6 +50,39 @@ kfree(void *pa)
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
+/*
+  //lab 6
+  //"kfree() should only place a page back on the free list if its
+  //   reference count is zero."
+  //wrapping and indenting original code below:
+
+  //decrement_rc((uint64) pa);
+
+  if (get_rc((uint64) pa) == 1)
+  {
+    //original
+
+    // Fill with junk to catch dangling refs.
+    memset(pa, 1, PGSIZE);
+
+    r = (struct run*)pa;
+
+    acquire(&kmem.lock);
+    r->next = kmem.freelist;
+    kmem.freelist = r;
+    release(&kmem.lock);
+
+    //printf("\nkfree: delete\n");
+    //end original
+  }
+  else if (get_rc((uint64) pa) != 0)
+  {
+    decrement_rc((uint64) pa);
+    //printf("\nkfree: decrement\n");
+  }
+  //end lab 6
+*/
+
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -60,6 +93,9 @@ kfree(void *pa)
   r->next = kmem.freelist;
   kmem.freelist = r;
   release(&kmem.lock);
+
+  //end original
+
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -78,5 +114,12 @@ kalloc(void)
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
+
+  //lab 6
+  //"Set a page’s reference count to one when kalloc() allocates it"
+  if (r)
+    increment_rc((uint64)r);
+
+
   return (void*)r;
 }

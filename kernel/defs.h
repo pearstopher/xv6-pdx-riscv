@@ -171,6 +171,14 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+//lab 6
+uint64          uvmalloc_wrap(pagetable_t, uint64);
+int             uvmcow(pagetable_t, uint64);
+int             is_cow(pagetable_t, uint64);
+void            increment_rc(uint64); //rc=reference count
+void            decrement_rc(uint64);
+int             get_rc(uint64);
+
 
 // plic.c
 void            plicinit(void);

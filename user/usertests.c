@@ -2652,7 +2652,7 @@ main(int argc, char *argv[])
     {sbrkbugs, "sbrkbugs" },
     // {badwrite, "badwrite" },
     {badarg, "badarg" },
-    {reparent, "reparent" },
+    {reparent, "reparent" }, //lab 3
     {twochildren, "twochildren"},
     {forkfork, "forkfork"},
     {forkforkfork, "forkforkfork"},

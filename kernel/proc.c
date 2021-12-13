@@ -25,23 +25,54 @@ extern char trampoline[]; // trampoline.S
 void
 procinit(void)
 {
+
+  //lab 3
+  //honestly I am confused about these 4 lines
+  //I am going to leave them alone
   struct proc *p;
   
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
 
+
+      //lab 3
+      //commenting this part out, moving to allocproc
+
+      /*  
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page.
+
+      //allocate a page
       char *pa = kalloc();
       if(pa == 0)
         panic("kalloc");
+
+      //location "high in memory"
       uint64 va = KSTACK((int) (p - proc));
+
+      //map the page
       kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+
+      //ok I see the problem
+      //each kernel stack will have mappings for all stacks
+      //I want it to just have mapping for one
+      //otherwise it's inefficient?
+
+      //set the processes stack pointer
       p->kstack = va;
+      p->kstack_pa = (uint64)pa; //lab 3
+      */
+ 
   }
+
+  //lab 3
+  //all the tests seem to run fine with this commented out
+  //I did add another kvminithart() in the scheduler
   kvminithart();
+
+  
 }
 
 // Must be called with interrupts disabled,
@@ -113,6 +144,7 @@ found:
     return 0;
   }
 
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -121,11 +153,67 @@ found:
     return 0;
   }
 
+
+  //lab 3
+  //create a kernel pagetable for the process
+  //p->kpt = proc_pagetable(p); //this adds stuff, won't work
+  p->kpt = uvmcreate(); //this seems to work
+  //p->kpt = (pagetable_t) kalloc(); //this would work too
+
+  if (p->kpt == 0) {
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+    //panic("kernel pagetable"); //could just panic
+  }
+  //memset(p->kpt, 0, PGSIZE); //need if using kalloc()
+
+  //create a kernel pagetable (function in vm.c)
+  p->kpt = kpt_per_process(p->kpt);
+
+
+
+  //lab 3
+  //begin code transferred from procinit()
+
+  // Allocate a page for the process's kernel stack.
+  // Map it high in memory, followed by an invalid
+  // guard page.
+ 
+  //allocate a page
+  char *pa = kalloc();
+  if(pa == 0)
+  {
+    panic("kalloc");
+    return 0;
+  }
+
+  //location "high in memory"
+
+  //memlayout.h:
+  //#define KSTACK(p) (TRAMPOLINE - ((p)+1)* 2*PGSIZE)
+  uint64 va = KSTACK((int) (p - proc)); //original
+  //uint64 va = KSTACK(0); //does this work?
+  //what is "p - proc" saying?
+  //I am going to need some clarification on what this means
+
+  //map the page to processes kernel pagetable
+  //kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W); //old
+  mappages(p->kpt, va, PGSIZE, (uint64)pa, PTE_R | PTE_W); //new
+  //didn't realize I needed to change this line for a WHILE
+
+  //set the processes stack pointer
+  p->kstack = va;
+  //end code from procinit()
+
+
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+
 
   return p;
 }
@@ -150,7 +238,32 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+
+  //lab 3
+ 
+  //free kstack
+  if (p->kstack)
+  {
+    //arg3: 1 = one page
+    //arg4: 1 = optionally free physical memory
+    uvmunmap(p->kpt, p->kstack, 1, 1);
+    p->kstack = 0;
+  }
+
+  //free kernel page table (AFTER unmap kstack)
+  if (p->kpt)
+  {
+    //kfree((void*)p->kpt);
+   
+    //pretty sure the kernel page table is only one page
+    //  but I made this function recursive while trying
+    //  to figure out why I was losing so many pages and
+    //  why kalloc() was failing me
+    kpt_free(p->kpt);
+    p->kpt = 0;
+  }
 }
+
 
 // Create a user page table for a given process,
 // with no user memory, but with trampoline pages.
@@ -195,6 +308,7 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
   uvmfree(pagetable, sz);
 }
 
+
 // a user program that calls exec("/init")
 // od -t xC initcode
 uchar initcode[] = {
@@ -228,6 +342,13 @@ userinit(void)
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
+  //lab 3.4
+  //add mappings before process is runnable
+  //"don't forget to include the first process' user page table in userinit"
+  //shouldn't have to round anything, going from 0 to PGSIZE
+  map_user_addresses(p->kpt, p->pagetable, 0, p->sz); 
+
+
   p->state = RUNNABLE;
 
   release(&p->lock);
@@ -235,19 +356,93 @@ userinit(void)
 
 // Grow or shrink user memory by n bytes.
 // Return 0 on success, -1 on failure.
+//
+//lab 3.4
+//this function was not easy to find
+//the lab manual says to find "sbrk"
+//syscall sys_sbrk calls this function
+//it looks like sys_sbrk == growproc()
+/*
+    uint64
+    sys_sbrk(void)
+    {
+      int addr;
+      int n;
+
+      if(argint(0, &n) < 0)
+        return -1;
+      addr = myproc()->sz;
+      if(growproc(n) < 0)
+        return -1;
+      return addr;
+    }
+*/
 int
 growproc(int n)
 {
   uint sz;
   struct proc *p = myproc();
 
+  //lab 3.4
+  //"You’ll need to modify xv6 to prevent user processes from 
+  //   growing larger than the PLIC address"
+  
+  if (PGROUNDUP(p->sz) + n >= 0xC000000)
+    return -1;
+  //I commented the above lines out just out of curiosity
+  //  and the usertests do seem to still pass just fine
+
+
   sz = p->sz;
   if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    
+    //lab 3.4
+    //add mappings
+    //"point where kernel changes a process's user mappngs"
+    //
+    //reading uvmalloc:
+    //  it does a PGROUNDUP on oldsz...
+    //  size might not be size of whole page?
+    //  growproc might just return newsz without
+    //    allocating memory if loop isn't triggered
+    //    because ROUNDUP makes it so a > newsz
+  
+    int temp_sz = PGROUNDUP(p->sz);
+    //map_user_addresses(p->kpt, p->pagetable, temp_sz, temp_sz + PGROUNDUP(n));
+    //accidentally combined two ROUNDUPS here, created an error where an
+    //  extra page of space was sometimes rounded up unnecessarily
+    map_user_addresses(p->kpt, p->pagetable, temp_sz, PGROUNDUP(p->sz + n));
+
+
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+
+    //lab 3.4
+    //sz is already decreased here, use p->sz
+
+    //I see uvmdealloc also rounds up page sizes
+    //might not have to dealloc if within size of 1 page
+    //if (PGROUNDUP(newsz) < PGROUNDUP(oldsz))
+
+    //code from uvmdealloc with mods:
+    if(PGROUNDUP(n) < PGROUNDUP(p->sz)){
+      int npages = (PGROUNDUP(p->sz) - PGROUNDUP(n)) / PGSIZE;
+      uvmunmap(p->kpt, PGROUNDUP(n), npages, 0); //don't free mem!!!asdfkj
+    }
+
+    //I must still be in over my head because i'm surprised the 
+    // pgroundup stuff actually fixed things. Sometimes I have a 
+    // good idea but when I'm working through it focusing on one 
+    // line at a time I start to lose my grasp of the whole bigger 
+    // concept.
+
+    //my other big problem was in this function too:
+    // I had accidentally set uvmunmap to free memory.
+
+
   }
   p->sz = sz;
   return 0;
@@ -292,6 +487,16 @@ fork(void)
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
+
+  //lab 3.4
+  //"point where kernel changes a process's user mappings"
+  //fix here before new process is set to runnable
+  //new process' kpt has been allocated in allocproc
+  //
+  //not sure if a forked process might have an uneven size
+  //so I will round up the new process size just to be safe
+  map_user_addresses(np->kpt, np->pagetable, 0, PGROUNDUP(np->sz)); 
+
 
   np->state = RUNNABLE;
 
@@ -472,6 +677,15 @@ scheduler(void)
         // to release its lock and then reacquire it
         // before jumping back to us.
         p->state = RUNNING;
+
+        
+        //lab 3
+        //put processes table in the register
+        w_satp(MAKE_SATP(p->kpt));
+        sfence_vma();
+        //see kvminithart() in vm.c
+
+
         c->proc = p;
         swtch(&c->context, &p->context);
 
@@ -480,6 +694,14 @@ scheduler(void)
         c->proc = 0;
 
         found = 1;
+
+        //lab 3
+        //set satp register back to kernel_pagetable
+        // when no process is running
+        kvminithart();
+        //not sure if the kvminithart() in initproc is necessary anymore
+
+
       }
       release(&p->lock);
     }

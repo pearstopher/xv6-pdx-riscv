@@ -178,6 +178,22 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+//lab 3
+void            vmprint(pagetable_t); //wrapper
+void            vmprint_r(pagetable_t, int); //recursive
+pagetable_t     copy_kpt(); //copy kernel pagetable, return ptr, bad
+pagetable_t     kpt_per_process(pagetable_t); //pagetable
+void            kpt_free(pagetable_t); //recursively (do I need to?) free kernel page table memory
+pte_t *         kwalk(uint64 va);
+void            map_user_addresses(pagetable_t, pagetable_t, uint64, uint64);
+
+//lab 3
+//vmcopyin.c
+int             statscopyin(char *, int);
+int             copyin_new(pagetable_t, char *, uint64, uint64);
+int             copyinstr_new(pagetable_t, char *, uint64, uint64);
+
+
 
 // plic.c
 void            plicinit(void);

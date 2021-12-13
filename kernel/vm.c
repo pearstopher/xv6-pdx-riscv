@@ -6,6 +6,12 @@
 #include "defs.h"
 #include "fs.h"
 
+//lab 3
+#include "spinlock.h" //dangit they have to be in order too
+#include "proc.h" //myproc(), causes spinlock error
+//honestly this is horrible
+
+
 /*
  * the kernel's page table.
  */
@@ -14,6 +20,10 @@ pagetable_t kernel_pagetable;
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
+
+//forward declaration cuz I added stuff in the wrong spot
+pte_t * walk(pagetable_t pagetable, uint64 va, int alloc);
+
 
 /*
  * create a direct-map page table for the kernel.
@@ -24,6 +34,12 @@ kvminit()
   kernel_pagetable = (pagetable_t) kalloc();
   memset(kernel_pagetable, 0, PGSIZE);
 
+  //lab 3
+  //use custom function to set page table instead
+  //get rid of duplicate code
+  kernel_pagetable = kpt_per_process(kernel_pagetable);
+
+/*
   // uart registers
   kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
 
@@ -45,7 +61,152 @@ kvminit()
   // map the trampoline for trap entry/exit to
   // the highest virtual address in the kernel.
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+*/
+
 }
+
+
+//lab 3
+pagetable_t
+kpt_per_process(pagetable_t kpt)
+{
+  //if this works, kvminit() should be able to call it
+
+  //translation from kvmmap to mappages
+  //(kvmmap just calls mappages)
+  //
+  //kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
+  //mappages(pagetable_name, va, sz, pa, perm)
+
+
+  // uart registers
+  //kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
+  mappages(kpt, UART0, PGSIZE, UART0, PTE_R | PTE_W);
+
+  // virtio mmio disk interface
+  //kvmmap(VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+  mappages(kpt, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W);
+
+  // CLINT
+  //kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+  mappages(kpt, CLINT, 0x10000, CLINT, PTE_R | PTE_W);
+
+  // PLIC
+  //kvmmap(PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+  mappages(kpt, PLIC, 0x400000, PLIC, PTE_R | PTE_W);
+
+  // map kernel text executable and read-only.
+  //kvmmap(KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+  mappages(kpt, KERNBASE, (uint64)etext-KERNBASE, KERNBASE, PTE_R | PTE_X);
+
+  // map kernel data and the physical RAM we'll make use of.
+  //kvmmap((uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+  mappages(kpt, (uint64)etext, PHYSTOP-(uint64)etext, (uint64)etext, PTE_R | PTE_W);
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  //kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+  mappages(kpt, TRAMPOLINE, PGSIZE, (uint64)trampoline, PTE_R | PTE_X);
+
+  return (pagetable_t) kpt; //unnecessary?
+}
+
+//lab 3
+//unused function
+//my first plan was just to copy the kernel pagetable memory
+//instead of actually building a new pagetable
+pagetable_t
+copy_kpt()
+{
+  //make a new page table
+  pagetable_t new_kpt = (pagetable_t) kalloc();
+
+  //dst, src, num
+  memmove(new_kpt, kernel_pagetable, PGSIZE);
+
+  return (pagetable_t) new_kpt;
+}
+
+//lab 3.4
+//
+//add mappings for user addresses to each process's kernel page table
+//needs to be in this file for access to kernel pagetable
+//
+//adding uint64 base
+//normally base starts at 0
+//but growproc doesn't
+//
+//after my recent work in growproc, I am
+//  gonna have to do page roundups on all this stuff maybe
+//    now: now everything should be rounded up before it gets passed in here
+void
+map_user_addresses(pagetable_t kpt, pagetable_t upt, uint64 base, uint64 sz)
+{
+  //I'm guessing basically just loop through every mapping 
+  //  in the user_pt
+  //and add it to the kernel_pt (somehow)
+
+  //pte_t is the data type for a page table entry
+
+  //riscv.h
+  /*
+  #define PTE_V (1L << 0) // valid
+  #define PTE_R (1L << 1)
+  #define PTE_W (1L << 2)
+  #define PTE_X (1L << 3)
+  #define PTE_U (1L << 4) // 1 -> user can access
+  */
+
+  pte_t *upte, *kpte;
+  uint64 i;
+ 
+  //memory is allocated in PGSIZE pieces
+  //i is a virtual address
+
+  //for (i = 0; i < sz; i += PGSIZE) //first try
+  //for (i = base; i < base + sz; i += PGSIZE) //second try
+  //(sz is total size, not difference between base and sz)
+  for (i = base; i < sz; i += PGSIZE)
+  {
+
+    //walk takes:
+    //  1 pagetable
+    //  2 virtual address
+    //  3 0 = return address, 1 = write new address?
+
+    //get the physical address from the user pt
+    if ((upte = walk(upt, i, 0)) == 0) //0 = search
+      panic("user pte not found");
+
+    //check if page table entry is valid
+    if ((*upte & PTE_V) == 0)
+      panic("user pte not valid");
+
+    //now i hopefully have a valid user page table entry
+    //and i have to write it to the kernel page table
+
+    //set the creation bit to add address
+    if ((kpte = walk(kpt, i, 1)) == 0) //1 = create
+      panic("kernel pte not created");
+
+    //now I should have a valid kernel page table entry
+    //I just have to point it at the physical address
+    //that I got from the user
+
+    //can I just set them to the same address?
+    *kpte = *upte; //try it just like this for now
+
+    //no: I need to change the user bit
+    //"a page with PTE_U set cannot be accessed in kernel mode"
+    *kpte = ~PTE_U & *kpte;
+ 
+    //one more check for if the kernel pte is valid
+    if ((*kpte & PTE_V) == 0)
+      panic("kernel pte not valid");
+
+  }
+}
+
 
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
@@ -87,6 +248,7 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
   }
   return &pagetable[PX(0, va)];
 }
+
 
 // Look up a virtual address, return the physical address,
 // or 0 if not mapped.
@@ -131,8 +293,26 @@ kvmpa(uint64 va)
   uint64 off = va % PGSIZE;
   pte_t *pte;
   uint64 pa;
-  
-  pte = walk(kernel_pagetable, va, 0);
+
+  //lab 3
+  //I can't find anywhere that's calling kvmpa() yet,
+  //  but this is clearly a problem:
+  //    kernel is panicking here
+  //    walk is using original kernel_pagetable not processess
+  //
+  //pte = walk(kernel_pagetable, va, 0); //old line
+  struct proc * p = myproc();
+  if (p == 0)
+  {
+    //no process, use kernel page table
+    pte = walk(kernel_pagetable, va, 0);
+  }
+  else
+  {
+    //use the process kernel page table
+    pte = walk(p->kpt, va, 0);
+  }
+
   if(pte == 0)
     panic("kvmpa");
   if((*pte & PTE_V) == 0)
@@ -289,6 +469,103 @@ freewalk(pagetable_t pagetable)
   kfree((void*)pagetable);
 }
 
+//lab 3
+//prints page table entries
+//wrapper
+void
+vmprint(pagetable_t pt)
+{
+  //level 0
+  printf("page table %p\n", pt);
+
+  //level 1+
+  vmprint_r(pt, 1);
+}
+
+//lab 3
+//prints page table entries
+//recursive
+void
+vmprint_r(pagetable_t pt, int depth)
+{
+  //loop through entire page contents (512 entries)
+  for (int i = 0; i < 512; ++i)
+  {
+    pte_t pte = pt[i];
+ 
+    //case 1: link to another page table
+    if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0)
+    {
+      //formatting
+      printf("..");
+      for (int j = 1; j < depth; ++j)
+        printf(" ..");
+ 
+      printf("%d: pte %p pa %p\n", i, pte, PTE2PA(pte));
+
+      //recursively print the next page table
+      uint64 child = PTE2PA(pte);
+      vmprint_r((pagetable_t)child, depth + 1);
+      //pt[i] = 0; //don't do this LOL
+    }
+
+    //case 2: valid page table entry
+    else if (pte & PTE_V)
+    {
+      //formatting
+      printf("..");
+      for (int j = 1; j < depth; ++j)
+        printf(" ..");
+
+
+      printf("%d: pte %p pa %p\n", i, pte, PTE2PA(pte));
+    }
+
+    //case 3: empty entry (ignore)
+  }
+}
+
+//lab 3
+//frees kernel page table memory
+//based on vm_print with recursion into deeper tables
+//if kernel page table is just one page, then this
+//  may not be necessary
+void
+kpt_free(pagetable_t kpt)
+{
+
+    //copying code from vmprint
+
+    //loop through entire page contents (512 entries)
+    for (int i = 0; i < 512; ++i)
+    {
+      pte_t pte = kpt[i];
+   
+      //case 1: link to another page table
+      if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0)
+      {
+        //recursively print the next page table
+        uint64 child = PTE2PA(pte);
+        kpt_free((pagetable_t)child); 
+      }
+
+      //case 2: valid page table entry
+      else if (pte & PTE_V)
+      {
+        kpt[i] = 0; //does this matter?
+        //maybe if the page is reused
+      }
+
+      //case 3: empty entry (ignore)  
+    }
+
+    //I was stuck here for a long time because I didn't
+    // realize that I forgot to add this line to actually 
+    // free the page memory :(
+    kfree((void*) kpt);
+}
+
+
 // Free user memory pages,
 // then free page-table pages.
 void
@@ -379,6 +656,10 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
+  //lab 3.4
+  return copyin_new(pagetable, dst, srcva, len);
+
+/*
   uint64 n, va0, pa0;
 
   while(len > 0){
@@ -396,6 +677,8 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
     srcva = va0 + PGSIZE;
   }
   return 0;
+*/
+
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -405,6 +688,10 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
+  //lab 3.4
+  return copyinstr_new(pagetable, dst, srcva, max);
+
+/*
   uint64 n, va0, pa0;
   int got_null = 0;
 
@@ -439,4 +726,5 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+*/
 }

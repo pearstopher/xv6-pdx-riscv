@@ -1,0 +1,44 @@
+1. Which registers contain arguments to functions? For example, which register holds 13 in main's call to printf?
+
+    Function arguents are contained in registers a0 through a7 (lecture 1 slide 18). In this example, 13 is passed to printf in register a2 (call.asm #24).
+
+
+2. Where is the only call to function f in the assembly code for main? Where is the call to g? (Hint: the compiler may inline functions.)
+
+    While answering #1, I noticed that f(8) + 1 = 12, and the call to printf put a literal 12 into register a1 instead of calling any functions (call.casm #26). I thought that was interesting. Both f(x) and g(x) add three to x in the same way (call.asm #6, #14) and f(x) does not appear to actually call g(x) as it does in call.c. The compiler must have optimized all of this.
+
+
+3. At what address is printf located?
+
+    When main calls printf (call.casm #34) there is a note that printf is at location 628. A quick search reveals the function "0000000000000628 <printf>" right where it is expected.
+
+
+4. What value if in the register ra just after the jalr to printf in main?
+
+    JALR (jump and link register) will "Compute the target address as the sum of the source register and a signed 12- bit immediate value." I know that printf is at hex 628 (dec 1576). The immediate value is dec 1528 (or hex 5F8). In order to jump to the correct location, the register ra must contain dec 48 / hex 30. (30 is also the hex of the previous instruction.)
+
+    The slideshow also mentions that JALR will "store the address of the next instruction in the destination register." The next instruction is at 0x38 so this must be saved somewhere. However in the JALR call in call.asm, I only see one register mentioned which I am assuming is the source register. I am not sure what then is the destination register or how it brings things back to the next instrution address.
+
+
+5. Run the following code. ... What is the output? If the RISC-V were instead big-endian what would you set i to in order to yield the same output?
+Would you need to change 57616 to a different value?
+
+    a) Output: "HE110 World" haha!
+
+    b) You would need to reverse the characters (72=r, 6c=l, 64=d) and set i to 0x726c6400.
+
+    c) 57616 would not need to be changed, it will be automatically be stored differently depending on the endianness of the system.
+
+6. In the following code, what is going to be printed after 'y='? Why does this happen?
+
+    I would have guessed that an error would be printed, and was surprised that this code works. After 'y=' is printed, the next value that is printed will be whatever is in the next function argument register (a2). I confirmed this in call.c by setting the register a2 by hand before calling printf. When printf was called, the value for y was indeed equal to the value I had put in the register!
+
+
+
+
+
+
+
+
+
+

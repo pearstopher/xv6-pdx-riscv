@@ -65,7 +65,28 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
+  }
+
+
+  //lab 5.3
+  //"you can check whether a fault is a page fault by seeing if
+  //  r_scause is 13 or 15 in usertrap()"
+  else if ((r_scause() == 13) || (r_scause() == 15))
+  {
+    //r_stval() returns the risc-v stval register, which contains
+    // the virtual address that caused the page fault
+    uint64 va = r_stval();
+
+    //lab 5.4
+    //ask uvmalloc to allocate the page (vm.c)
+    if (uvmalloc_wrap(p->pagetable, va) == 0)
+      p->killed = 1;
+
+  }
+  //end lab 5
+
+
+  else if((which_dev = devintr()) != 0){
     // ok
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);

@@ -47,8 +47,19 @@ sys_sbrk(void)
   if(argint(0, &n) < 0)
     return -1;
   addr = myproc()->sz;
-  if(growproc(n) < 0)
-    return -1;
+
+
+  //lab 5.4
+  //"handle negative sbrk() arguments"
+  if (n < 0)
+    uvmdealloc(myproc()->pagetable, addr, addr + n);
+
+  //lab 5.2
+  //"delete the call to growproc()"
+  //if(growproc(n) < 0)
+  //  return -1;
+  myproc()->sz += n;
+
   return addr;
 }
 

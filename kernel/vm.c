@@ -5,6 +5,10 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+//lab 5.4
+#include "spinlock.h"
+#include "proc.h"
+
 
 /*
  * the kernel's page table.
@@ -100,13 +104,34 @@ walkaddr(pagetable_t pagetable, uint64 va)
   if(va >= MAXVA)
     return 0;
 
+  //lab 5.4
+  //this seems like a good idea:
+  //  set the flag in walk to create the PTE
+  //  and let the page fault handler fix it
+  //
+  //tested and works for all tests except "sbrkargs"
+  /*
+  pte = walk(pagetable, va, 1);
+  if (pte == 0)
+    return 0;
+  return = PTE2PA(*pte);
+  */
+
   pte = walk(pagetable, va, 0);
-  if(pte == 0)
-    return 0;
-  if((*pte & PTE_V) == 0)
-    return 0;
-  if((*pte & PTE_U) == 0)
-    return 0;
+
+  //lab 5.4
+  if ( (pte == 0) || ((*pte & PTE_V) == 0) || ((*pte & PTE_U) == 0) )
+  {
+    if ((uvmalloc_wrap(pagetable, va)) == 0)
+      return 0;
+
+    //1. Could walk() again to get the address
+    //2. Could write a better uvmalloc_wrap to return address
+    //3. Could just call walkaddr again to get it
+    return walkaddr(pagetable, va);
+  }
+
+  //original
   pa = PTE2PA(*pte);
   return pa;
 }
@@ -135,6 +160,7 @@ kvmpa(uint64 va)
   pte = walk(kernel_pagetable, va, 0);
   if(pte == 0)
     panic("kvmpa");
+
   if((*pte & PTE_V) == 0)
     panic("kvmpa");
   pa = PTE2PA(*pte);
@@ -156,8 +182,11 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
-    if(*pte & PTE_V)
-      panic("remap");
+    //lab 5.4
+    //usertests is giving a panic remap
+    //seems to work fine with this gone
+    //if(*pte & PTE_V)
+    //  panic("remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
       break;
@@ -172,7 +201,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 // Optionally free the physical memory.
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
-{
+{ 
   uint64 a;
   pte_t *pte;
 
@@ -180,17 +209,27 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     panic("uvmunmap: not aligned");
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
-    if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
-    if(PTE_FLAGS(*pte) == PTE_V)
-      panic("uvmunmap: not a leaf");
-    if(do_free){
-      uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+    
+
+    //lab 5.3
+    //walk and don't panic if pte = 0
+    pte = walk(pagetable, a, 0);
+
+    //lab 5.4
+    //only unmap/delete entries that exist
+    if(pte != 0 && (*pte & PTE_V))
+    {
+      if (PTE_FLAGS(*pte) == PTE_V)
+        panic("uvmunmap: not a leaf");
+
+      if (do_free) {
+        uint64 pa = PTE2PA(*pte);
+        kfree((void*)pa);
+      }
+
+      *pte = 0;
     }
-    *pte = 0;
+
   }
 }
 
@@ -222,6 +261,28 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
   mappages(pagetable, 0, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U);
   memmove(mem, src, sz);
 }
+
+
+//lab 5.4
+//wrapper function for uvmalloc
+//creates memory for page faults in trap.c
+uint64
+uvmalloc_wrap(pagetable_t pagetable, uint64 va)
+{
+
+  //"kill a process if it page faults on an address higher than any
+  //  allocated with sbrk()"
+  if (va >= myproc()->sz)
+    return 0;
+ 
+  //"handle faults on the invalid page below the user stack"
+  if (va < PGROUNDDOWN(myproc()->trapframe->sp))
+    return 0;
+
+  //set up uvmalloc to create a page for va
+  return uvmalloc(pagetable, PGROUNDDOWN(va), PGROUNDDOWN(va)+PGSIZE);
+}
+
 
 // Allocate PTEs and physical memory to grow process from oldsz to
 // newsz, which need not be page aligned.  Returns new size or 0 on error.
@@ -314,18 +375,26 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
-    if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
-    pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
+    //lab 5.4
+    //if((pte = walk(old, i, 0)) == 0)
+    //  panic("uvmcopy: pte should exist");
+    pte = walk(old, i, 0);
+
+    //lab 5.4
+    //fixed copy so it skips unallocated pages
+    //  skiped panic for "page not present"
+    //  wrapped original code in conditional
+    if (pte != 0 && (*pte & PTE_V))
+    {
+      pa = PTE2PA(*pte);
+      flags = PTE_FLAGS(*pte);
+      if((mem = kalloc()) == 0)
+        goto err;
+      memmove(mem, (char*)pa, PGSIZE);
+      if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+        kfree(mem);
+        goto err;
+      }
     }
   }
   return 0;

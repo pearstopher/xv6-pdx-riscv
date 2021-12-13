@@ -267,6 +267,10 @@ fork(void)
     return -1;
   }
 
+  //lab 5.4
+  //handle the parent-to-child memory copy in fork() correctly
+  //no mods, going to fix in uvmcopy in vm.c
+
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);

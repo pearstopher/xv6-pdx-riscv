@@ -1,2 +1,4 @@
+git clone https://github.com/pearstopher/xv6-pdx-riscv/
 each lab is in a separate branch
 use 'git branch -a' to see avaiable branches
+runs on lab servers without additional configuration

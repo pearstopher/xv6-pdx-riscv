@@ -1,0 +1,70 @@
+Christopher Juncker
+CS333 Lab 3
+
+
+
+1. Explain the output of vmprint in terms of Fig 3-4 from the text.
+
+a. What does page 0 contain?
+
+  the code
+
+
+b. What is in page 2?
+
+  the stack
+
+
+c. When running in user mode, could the process read/write the memory 
+    mapped by page 1?
+
+  no
+
+  0x0000000021fd740f = 100001111111010111010000001111
+
+  user bit 4 is turned off
+
+
+---------------------------------------------------------
+Reference
+---------------------------------------------------------
+..0: pte 0x0000000021fd7c01 pa 0x0000000087f5f000
+.. ..0: pte 0x0000000021fd7801 pa 0x0000000087f5e000
+.. .. ..0: pte 0x0000000021fd801f pa 0x0000000087f60000
+.. .. ..1: pte 0x0000000021fd740f pa 0x0000000087f5d000
+.. .. ..2: pte 0x0000000021fd701f pa 0x0000000087f5c000
+..255: pte 0x0000000021fd8801 pa 0x0000000087f62000
+.. ..511: pte 0x0000000021fd8401 pa 0x0000000087f61000
+.. .. ..510: pte 0x0000000021fed807 pa 0x0000000087fb6000
+.. .. ..511: pte 0x0000000020001c0b pa 0x0000000080007000
+---------------------------------------------------------
+
+
+2. Explain why the third test srcva + len < srcva is necessary in copyin new(): give values
+for srcva and len for which the first two test fail (i.e., they will not cause to return -1) but for
+which the third one is true (resulting in returning -1).
+
+  the third test may be necessary because of uint64 overflow
+
+  srcva = maximum uint64 value
+  len = any value greater than p->sz
+
+  test 1 will pass legitimately
+  test 2 will overflow and still pass
+  test 3 will fail
+
+
+----------------------------------------------------------------------
+Reference 
+----------------------------------------------------------------------
+copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
+{
+  struct proc *p = myproc();
+
+  if (srcva >= p->sz || srcva+len >= p->sz || srcva+len < srcva)
+    return -1;
+----------------------------------------------------------------------
+ 
+
+
+
